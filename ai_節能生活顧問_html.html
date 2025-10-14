@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI 節能生活顧問</title>
+  <style>
+    :root{--bg:#f5f7fb;--card:#fff;--accent:#16a34a;--muted:#666}
+    *{box-sizing:border-box;font-family: system-ui,-apple-system, BlinkMacSystemFont,"Segoe UI", Roboto, "Helvetica Neue", Arial}
+    body{margin:0;background:linear-gradient(180deg,#f7fbf8,#eef6ee);color:#0f172a}
+    .container{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:6px 0 0;color:var(--muted)}
+    .grid{display:grid;grid-template-columns:360px 1fr;gap:18px;margin-top:18px}
+    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 8px 20px rgba(12,18,40,0.06)}
+    label{display:block;margin-top:10px;font-weight:600}
+    input[type=number], select{width:100%;padding:8px;border-radius:8px;border:1px solid #e6eef0}
+    .appliance-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+    .appliance-row input{flex:1}
+    .small{font-size:13px;color:var(--muted)}
+    .btn{padding:8px 12px;border-radius:8px;background:var(--accent);color:#fff;border:none;cursor:pointer}
+    .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(22,163,74,0.12)}
+    .results{display:grid;grid-template-columns:1fr 320px;gap:12px;margin-top:12px}
+    .tip{background:linear-gradient(180deg,#f7fff8,#f0fff4);padding:10px;border-radius:8px;border:1px solid rgba(16,185,129,0.06)}
+    .suggestion{margin-top:8px;padding:8px;border-radius:8px;background:#fff;border-left:4px solid rgba(22,163,74,0.12)}
+    canvas{width:100%;height:220px;border-radius:8px;background:#fff}
+    .export{display:flex;gap:8px;align-items:center;margin-top:10px}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}.results{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>AI 節能生活顧問</h1>
+        <p class="lead">輸入你的用能資訊，系統會估算每月耗能、CO₂ 排放量，並給出個人化節能建議與預期節省。</p>
+      </div>
+      <div>
+        <small class="small">示範版 • 前端單檔實作（可延伸接後端模型）</small>
+      </div>
+    </header>
+
+    <div class="grid">
+      <aside class="card">
+        <div>
+          <label>地區（影響電價）</label>
+          <select id="region">
+            <option value="tw">台灣（預設）</option>
+            <option value="jp">日本</option>
+            <option value="us">美國</option>
+          </select>
+
+          <label>家庭人數</label>
+          <input id="household" type="number" min="1" value="3">
+
+          <label>每月電費（若不知道可留空讓系統估算）</label>
+          <input id="bill" type="number" min="0" placeholder="NT$ / month">
+
+          <label style="margin-top:14px">常用電器（每台：瓦數、每日使用小時數、台數）</label>
+
+          <div id="appliances">
+            <!-- 範例列 -->
+            <div class="appliance-row">
+              <input data-key="name" placeholder="電器名稱 (例如：冷氣)" value="冷氣">
+              <input data-key="w" type="number" placeholder="瓦(W)" value="1200">
+              <input data-key="h" type="number" placeholder="每日小時" value="6">
+              <input data-key="n" type="number" placeholder="台數" value="1">
+            </div>
+            <div class="appliance-row">
+              <input data-key="name" placeholder="電器名稱 (冰箱)" value="冰箱">
+              <input data-key="w" type="number" placeholder="瓦(W)" value="150">
+              <input data-key="h" type="number" placeholder="每日小時" value="24">
+              <input data-key="n" type="number" placeholder="台數" value="1">
+            </div>
+          </div>
+
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button id="addAppliance" class="btn ghost">＋ 新增電器列</button>
+            <button id="calc" class="btn">估算節能建議</button>
+          </div>
+
+          <div class="export">
+            <button id="exportCsv" class="btn ghost">匯出報表 (CSV)</button>
+            <button id="reset" class="btn ghost">重置</button>
+          </div>
+
+        </div>
+      </aside>
+
+      <main>
+        <section class="card">
+          <div class="results">
+            <div>
+              <h3>估算結果</h3>
+              <div id="summary" class="tip">
+                <div>每月用電：約 <strong id="estKwh">--</strong> kWh</div>
+                <div style="margin-top:6px">預估每月電費：約 <strong id="estCost">--</strong></div>
+                <div style="margin-top:6px">相當於 CO₂ 排放：約 <strong id="estCO2">--</strong> kg</div>
+              </div>
+
+              <h4 style="margin-top:12px">個人化建議（優先順序）</h4>
+              <div id="suggestions">
+                <!-- 建議項目 -->
+              </div>
+
+              <h4 style="margin-top:12px">模擬節能方案</h4>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn" data-sim="ac">冷氣溫度＋1°C 節能</button>
+                <button class="btn" data-sim="led">換 LED 燈</button>
+                <button class="btn" data-sim="fridge">冰箱溫度優化</button>
+                <button class="btn" data-sim="all">套用所有改善</button>
+              </div>
+
+              <div style="margin-top:12px">
+                <h4>預估節省</h4>
+                <div id="simResult" class="tip">尚未執行模擬</div>
+              </div>
+
+            </div>
+
+            <aside>
+              <h4>視覺化</h4>
+              <canvas id="chart"></canvas>
+
+              <h4 style="margin-top:12px">快速提示</h4>
+              <div class="suggestion">調高冷氣 1°C 可省約 6-10% 電力使用（視型號與使用情境）。</div>
+              <div class="suggestion">待機能耗也會累積，使用延時斷電或多插座開關關閉可減少待機耗電。</div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      註：本系統為示範用前端原型，計算以估算係數為主；若需高精準度可整合智慧電表或能源資料 API 進行校正。
+    </footer>
+  </div>
+
+  <script>
+    // Region price & CO2 factor (simplified)
+    const REGION = {
+      tw: {price:4.5, co2:0.5}, // NT$/kWh, kg CO2/kWh (假設值)
+      jp: {price:30, co2:0.4}, // JPY placeholder
+      us: {price:0.15, co2:0.45}
+    };
+
+    const toFixed = (v, d=2)=> Number(v).toFixed(d);
+
+    const $ = id => document.getElementById(id);
+    const appliancesEl = document.getElementById('appliances');
+    const calcBtn = document.getElementById('calc');
+    const estKwhEl = document.getElementById('estKwh');
+    const estCostEl = document.getElementById('estCost');
+    const estCO2El = document.getElementById('estCO2');
+    const suggestionsEl = document.getElementById('suggestions');
+    const chart = document.getElementById('chart');
+    const simResult = document.getElementById('simResult');
+
+    function readAppliances(){
+      const rows = Array.from(appliancesEl.querySelectorAll('.appliance-row'));
+      return rows.map(r=>{
+        const name = r.querySelector('[data-key="name"]').value || '電器';
+        const w = Number(r.querySelector('[data-key="w"]').value) || 0;
+        const h = Number(r.querySelector('[data-key="h"]').value) || 0;
+        const n = Number(r.querySelector('[data-key="n"]').value) || 1;
+        return {name,w,h,n};
+      });
+    }
+
+    function estimate(){
+      const region = document.getElementById('region').value;
+      const price = REGION[region].price;
+      const co2factor = REGION[region].co2;
+      const household = Number($('household').value) || 1;
+      const billInput = Number($('bill').value);
+
+      const apps = readAppliances();
+      // kWh per month = sum( W * h * n /1000 * 30 )
+      let totalKwh = 0;
+      apps.forEach(a=>{
+        totalKwh += (a.w * a.h * a.n / 1000) * 30;
+      });
+
+      // If user provided monthly bill, we can estimate implied kWh
+      if(billInput>0){
+        // for TW price in NT$/kWh
+        const impliedKwh = billInput / price;
+        // weighted average (let's blend 60% appliances calc, 40% bill-based)
+        totalKwh = totalKwh * 0.6 + impliedKwh * 0.4;
+      }
+
+      const cost = totalKwh * price;
+      const co2 = totalKwh * co2factor;
+
+      estKwhEl.textContent = toFixed(totalKwh,1);
+      estCostEl.textContent = `NT$ ${toFixed(cost,0)}`;
+      estCO2El.textContent = toFixed(co2,1);
+
+      // Generate suggestions based on appliances
+      generateSuggestions(apps, totalKwh);
+      drawChart(totalKwh, apps);
+
+      return {kwh:totalKwh,cost,co2};
+    }
+
+    function generateSuggestions(apps,totalKwh){
+      suggestionsEl.innerHTML='';
+      // Rank by potential savings (simple heuristics)
+      // If AC exists and uses many hours -> suggest temp up 1
+      const ac = apps.find(a=>/冷氣|air|ac/i.test(a.name));
+      if(ac && ac.h >=4){
+        const saving = totalKwh * 0.08; // 假設 8%
+        const el = document.createElement('div'); el.className='suggestion';
+        el.innerHTML = `<strong>冷氣溫度調高 1°C</strong><div class="small">適用於：冷氣每日使用 ${ac.h} 小時。預估每月可省 ${toFixed(saving,1)} kWh</div>`;
+        suggestionsEl.appendChild(el);
+      }
+
+      // If lights use > 3 hours and many bulbs
+      const lights = apps.find(a=>/燈|light|燈泡/i.test(a.name));
+      if(lights && lights.h>=3){
+        const saving = lights.w/1000 * lights.h * 30 * 0.3; // 換成 LED 約省30%
+        const el = document.createElement('div'); el.className='suggestion';
+        el.innerHTML = `<strong>更換為 LED 燈泡</strong><div class="small">預估每月可省 ${toFixed(saving,1)} kWh</div>`;
+        suggestionsEl.appendChild(el);
+      }
+
+      // Refrigerator check
+      const fridge = apps.find(a=>/冰箱|fridge/i.test(a.name));
+      if(fridge){
+        const saving = fridge.w/1000 * fridge.h * 30 * 0.06; // 小幅優化 6%
+        const el = document.createElement('div'); el.className='suggestion';
+        el.innerHTML = `<strong>調整冰箱溫度與定期除霜</strong><div class="small">預估每月可省 ${toFixed(saving,1)} kWh</div>`;
+        suggestionsEl.appendChild(el);
+      }
+
+      // Standby suggestion
+      const standbyEl = document.createElement('div'); standbyEl.className='suggestion';
+      standbyEl.innerHTML = `<strong>關閉待機電源</strong><div class="small">將電器完全關機或使用多孔插座開關，可減少不必要的待機耗電。</div>`;
+      suggestionsEl.appendChild(standbyEl);
+
+      // If no major items found
+      if(suggestionsEl.children.length===0){
+        const el = document.createElement('div'); el.className='suggestion';
+        el.textContent = '暫無特別建議，請新增家中主要耗電設備以取得更精準建議。';
+        suggestionsEl.appendChild(el);
+      }
+    }
+
+    // Simple bar chart: total vs potential savings
+    function drawChart(totalKwh, apps){
+      const ctx = chart.getContext('2d');
+      const w = chart.width = chart.clientWidth * devicePixelRatio;
+      const h = chart.height = chart.clientHeight * devicePixelRatio;
+      ctx.clearRect(0,0,w,h);
+      ctx.save(); ctx.scale(devicePixelRatio,devicePixelRatio);
+      // background
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,chart.clientWidth,chart.clientHeight);
+
+      // compute sample savings from suggestions (sum simplified)
+      let saving = 0;
+      const ac = apps.find(a=>/冷氣|air|ac/i.test(a.name)); if(ac) saving += totalKwh * 0.08;
+      const lights = apps.find(a=>/燈|light|燈泡/i.test(a.name)); if(lights) saving += lights.w/1000 * lights.h * 30 * 0.3;
+      const fridge = apps.find(a=>/冰箱|fridge/i.test(a.name)); if(fridge) saving += fridge.w/1000 * fridge.h *30 * 0.06;
+
+      // draw bars
+      const pad = 20; const barW = 80; const max = Math.max(totalKwh, saving*1.2,10);
+      // total
+      ctx.fillStyle = '#16a34a'; ctx.fillRect(pad,30, (barW)*(totalKwh/max), 40);
+      ctx.fillStyle = '#0f172a'; ctx.fillText(`每月用電 ${toFixed(totalKwh,1)} kWh`, pad, 25);
+      // saving
+      ctx.fillStyle = '#a7f3d0'; ctx.fillRect(pad + barW + 30, 30, (barW)*(saving/max), 40);
+      ctx.fillStyle = '#0f172a'; ctx.fillText(`建議可省 ${toFixed(saving,1)} kWh`, pad + barW +30, 25);
+      ctx.restore();
+    }
+
+    // Simulation handlers
+    document.querySelectorAll('[data-sim]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const sim = btn.getAttribute('data-sim');
+        const base = estimate();
+        let saved = 0;
+        if(sim==='ac') saved = base.kwh * 0.08;
+        if(sim==='led'){
+          const lights = readAppliances().find(a=>/燈|light|燈泡/i.test(a.name));
+          if(lights) saved = lights.w/1000 * lights.h *30 * 0.3;
+        }
+        if(sim==='fridge'){
+          const fridge = readAppliances().find(a=>/冰箱|fridge/i.test(a.name));
+          if(fridge) saved = fridge.w/1000 * fridge.h *30 * 0.06;
+        }
+        if(sim==='all'){
+          // sum typical
+          const apps = readAppliances();
+          const ac = apps.find(a=>/冷氣|air|ac/i.test(a.name)); if(ac) saved += base.kwh * 0.08;
+          const lights = apps.find(a=>/燈|light|燈泡/i.test(a.name)); if(lights) saved += lights.w/1000 * lights.h *30 * 0.3;
+          const fridge = apps.find(a=>/冰箱|fridge/i.test(a.name)); if(fridge) saved += fridge.w/1000 * fridge.h *30 * 0.06;
+        }
+        const region = document.getElementById('region').value;
+        const price = REGION[region].price;
+        const money = saved * price;
+        simResult.innerHTML = `預估每月可省 <strong>${toFixed(saved,1)} kWh</strong>，約省 <strong>NT$ ${toFixed(money,0)}</strong>`;
+      });
+    });
+
+    // Add appliance row
+    document.getElementById('addAppliance').addEventListener('click',()=>{
+      const div = document.createElement('div'); div.className='appliance-row';
+      div.innerHTML = '<input data-key="name" placeholder="電器名稱 (例如：電視)"> <input data-key="w" type="number" placeholder="瓦(W)"> <input data-key="h" type="number" placeholder="每日小時"> <input data-key="n" type="number" placeholder="台數" value="1">';
+      appliancesEl.appendChild(div);
+    });
+
+    document.getElementById('calc').addEventListener('click',()=>{ estimate(); simResult.textContent='尚未執行模擬'; });
+    document.getElementById('reset').addEventListener('click',()=>{ location.reload(); });
+
+    // Export CSV
+    document.getElementById('exportCsv').addEventListener('click',()=>{
+      const apps = readAppliances();
+      const rows = [['名稱','瓦(W)','每日小時','台數']];
+      apps.forEach(a=> rows.push([a.name,a.w,a.h,a.n]));
+      const content = rows.map(r=>r.join(',')).join('\n');
+      const blob = new Blob([content],{type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='energy-report.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    // initial estimate
+    window.onload = ()=>{ estimate(); };
+  </script>
+</body>
+</html>
